@@ -22,13 +22,17 @@ IPAddress GATEWAY(192,168,1,1);
 IPAddress SUBNET(255,255,255,0);
 ESP8266WebServer server(80); //Webserver instance for DISCONNECTED_MODE
 
-//Wifi credentials variables (CONNECTED_MODE)
-const int REQUEST_INTERVAL = 30; //Interval in seconds
+//Client settings variables (CONNECTED_MODE)
+char HOST[] = "uhoo.dvc-icta.nl";
+const int REQUEST_INTERVAL = 60; //Interval in seconds
 double RequestTimer = 0.00;
+int LED_STATUS = -2;
 
-//Wifi credetials reset button PIN
-const int RESET_BUTTON_PIN = D6;
-const int REQUEST_LED_PIN = D1;
+//GPIO Pins
+const int RESET_BUTTON_PIN = D5;
+const int GREEN_PIN = D0;
+const int YELLOW_PIN = D1;
+const int RED_PIN = D2;
 
 //Max bytes to write to EEPROM storage
 const int MAX_EEPROM_BYTES = 128;
@@ -54,6 +58,8 @@ void UnSetConnectedMode();
 void LoopDisconnectedMode();
 void LoopConnectedMode();
 void ListenToResetButton();
+void RefreshStatusLED();
+int GetStatus();
 
 void setup() {
   //Start serial communication
@@ -70,8 +76,9 @@ void setup() {
   pinMode(RESET_BUTTON_PIN, INPUT);
 
   //Set REQUEST_LED pinmode
-  pinMode(REQUEST_LED_PIN, OUTPUT);
-  digitalWrite(REQUEST_LED_PIN, LOW);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(YELLOW_PIN, OUTPUT);
+  pinMode(RED_PIN, OUTPUT);
 
   //Read registered ssid and password from EEPROM storage
   String ssid_password = ReadWifiCredentials();
@@ -82,6 +89,7 @@ void setup() {
     mode = CONNECTED_MODE;
   }
 
+  LED_STATUS = -2;
   //Run setup method for the selected mode
   switch(mode){
     case CONNECTED_MODE:
@@ -97,6 +105,7 @@ void setup() {
 
 //Main loop
 void loop(void){
+  RefreshStatusLED();
   switch(mode){
     case CONNECTED_MODE:
       LoopConnectedMode();
@@ -114,6 +123,7 @@ void loop(void){
 void SetupDisconnectedMode(){
   Serial.println("Setting up disconnected mode");
   mode = DISCONNECTED_MODE;
+  LED_STATUS = -2;
 
   //Set wifi mode
   WiFi.mode(WIFI_AP);
@@ -165,9 +175,12 @@ void SetupConnectedMode(){
   }
   while (WiFi.status() != WL_CONNECTED) 
   {
-    delay(500);
+    RefreshStatusLED();
+    delay(100);
     Serial.print(".");
   }
+  LED_STATUS = -1;
+  RefreshStatusLED();
   Serial.println("");
   Serial.println("Connection Successful!");
   Serial.print("My IP Address is: ");
@@ -182,19 +195,9 @@ void UnSetConnectedMode(){
 void LoopConnectedMode(){
   RequestTimer += (LOOP_DELAY * 0.001);
   if(WiFi.status() == WL_CONNECTED && RequestTimer > REQUEST_INTERVAL){ //Check WiFi connection status 
-    Serial.println("Sending request"); 
-    digitalWrite(REQUEST_LED_PIN, HIGH);
-    HTTPClient http; //Declare an object of class HTTPClient
-    http.begin("http://jsonplaceholder.typicode.com/users/1");
-    int httpCode = http.GET(); //Send the request
-    Serial.println(String(httpCode));
-    if (httpCode > 0) { //Check the returning code
-      String payload = http.getString(); //Get the request response payload
-      Serial.println(payload); //Print the response payload
-    }
-    http.end(); //Close connection 
+    LED_STATUS = GetStatus();
+    //Set request timer to zero
     RequestTimer = 0.00;
-    digitalWrite(REQUEST_LED_PIN, LOW);
   }
 }
 
@@ -312,4 +315,77 @@ void handleRegister(){
 
 void handleNotFound(){
   server.send(404, "text/html", "404: Not found"); // Send HTTP status 404 (Not Found) when there's no handler for the URI in the request
+}
+
+void RefreshStatusLED() {
+  switch (LED_STATUS)
+  {
+    case -1: //No device
+      if(digitalRead(GREEN_PIN) == HIGH) digitalWrite(GREEN_PIN, LOW);
+      if(digitalRead(YELLOW_PIN) == HIGH) digitalWrite(YELLOW_PIN, LOW);
+      if(digitalRead(RED_PIN) == HIGH) digitalWrite(RED_PIN, LOW);    
+    break;
+    case 0: //No status
+      if(digitalRead(GREEN_PIN) == LOW) digitalWrite(GREEN_PIN, HIGH);
+      if(digitalRead(YELLOW_PIN) == LOW) digitalWrite(YELLOW_PIN, HIGH);
+      if(digitalRead(RED_PIN) == LOW) digitalWrite(RED_PIN, HIGH);    
+    break;
+    case 1: //Good
+      if(digitalRead(GREEN_PIN) == LOW) digitalWrite(GREEN_PIN, HIGH);
+      if(digitalRead(YELLOW_PIN) == HIGH) digitalWrite(YELLOW_PIN, LOW);
+      if(digitalRead(RED_PIN) == HIGH) digitalWrite(RED_PIN, LOW);    
+    break;
+    case 2: //Warning
+      if(digitalRead(GREEN_PIN) == HIGH) digitalWrite(GREEN_PIN, LOW);
+      if(digitalRead(YELLOW_PIN) == LOW) digitalWrite(YELLOW_PIN, HIGH);
+      if(digitalRead(RED_PIN) == HIGH) digitalWrite(RED_PIN, LOW);    
+    break;
+    case 3: //Bad
+      if(digitalRead(GREEN_PIN) == HIGH) digitalWrite(GREEN_PIN, LOW);
+      if(digitalRead(YELLOW_PIN) == HIGH) digitalWrite(YELLOW_PIN, LOW);
+      if(digitalRead(RED_PIN) == LOW) digitalWrite(RED_PIN, HIGH);    
+    break;
+    default: //Connecting to internet
+      digitalWrite(GREEN_PIN, !digitalRead(GREEN_PIN));
+      digitalWrite(YELLOW_PIN, !digitalRead(YELLOW_PIN));
+      digitalWrite(RED_PIN, !digitalRead(RED_PIN));    
+    break;
+  }
+}
+
+int GetStatus(){
+  WiFiClient client;
+  if(client.connect(HOST, 80)){
+    client.print("GET /api/indicators/" + MAC_ADRESS + "/status HTTP/1.1\r\n" +
+            "Host: " + HOST + "\r\n" +
+            "Content-Type: application/json\r\n" + 
+            "Connection: close\r\n\r\n");
+    if(client.connected()){
+      int timeoutCounter = 0;
+      //Wait till there is data available
+      while(!client.available() && timeoutCounter < 50){
+        delay(100);
+        timeoutCounter++;
+      }
+      String response = "";
+      while(client.available()){
+        Serial.println("Reading string data");
+        response += client.readString();
+      }
+      int lastIndex = response.lastIndexOf("\r\n");
+      String body = response.substring(lastIndex + 2, response.length());
+      if(body.length() > 0){
+        Serial.println("Body: " + body);
+        return body.toInt();
+      }else{
+        Serial.println("Body is empty");
+      }
+    }else{
+      Serial.println("Connection lost");
+    }
+  }else{
+    Serial.println("Could not connect to the host: " + String(HOST));
+  }
+  client.stop();
+  return -1;  
 }
