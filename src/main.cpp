@@ -24,7 +24,7 @@ ESP8266WebServer server(80); //Webserver instance for DISCONNECTED_MODE
 
 //Client settings variables (CONNECTED_MODE)
 char HOST[] = "uhoo.dvc-icta.nl";
-const int REQUEST_INTERVAL = 60; //Interval in seconds
+const int REQUEST_INTERVAL = 30; //Interval in seconds
 double RequestTimer = 0.00;
 int LED_STATUS = -2;
 
@@ -185,6 +185,7 @@ void SetupConnectedMode(){
   Serial.println("Connection Successful!");
   Serial.print("My IP Address is: ");
   Serial.println(WiFi.localIP());// Print the IP address
+  LED_STATUS = GetStatus();
 }
 
 void UnSetConnectedMode(){
@@ -194,7 +195,7 @@ void UnSetConnectedMode(){
 
 void LoopConnectedMode(){
   RequestTimer += (LOOP_DELAY * 0.001);
-  if(WiFi.status() == WL_CONNECTED && RequestTimer > REQUEST_INTERVAL){ //Check WiFi connection status 
+  if(RequestTimer > REQUEST_INTERVAL){ //Check WiFi connection status 
     LED_STATUS = GetStatus();
     //Set request timer to zero
     RequestTimer = 0.00;
@@ -354,38 +355,40 @@ void RefreshStatusLED() {
 }
 
 int GetStatus(){
-  WiFiClient client;
-  if(client.connect(HOST, 80)){
-    client.print("GET /api/indicators/" + MAC_ADRESS + "/status HTTP/1.1\r\n" +
-            "Host: " + HOST + "\r\n" +
-            "Content-Type: application/json\r\n" + 
-            "Connection: close\r\n\r\n");
-    if(client.connected()){
-      int timeoutCounter = 0;
-      //Wait till there is data available
-      while(!client.available() && timeoutCounter < 50){
-        delay(100);
-        timeoutCounter++;
-      }
-      String response = "";
-      while(client.available()){
-        Serial.println("Reading string data");
-        response += client.readString();
-      }
-      int lastIndex = response.lastIndexOf("\r\n");
-      String body = response.substring(lastIndex + 2, response.length());
-      if(body.length() > 0){
-        Serial.println("Body: " + body);
-        return body.toInt();
+  if(WiFi.status() == WL_CONNECTED){
+    WiFiClient client;
+    if(client.connect(HOST, 80)){
+      client.print("GET /api/indicators/" + MAC_ADRESS + "/status HTTP/1.1\r\n" +
+              "Host: " + HOST + "\r\n" +
+              "Content-Type: application/json\r\n" + 
+              "Connection: close\r\n\r\n");
+      if(client.connected()){
+        int timeoutCounter = 0;
+        //Wait till there is data available
+        while(!client.available() && timeoutCounter < 50){
+          delay(100);
+          timeoutCounter++;
+        }
+        String response = "";
+        while(client.available()){
+          Serial.println("Reading string data");
+          response += client.readString();
+        }
+        int lastIndex = response.lastIndexOf("\r\n");
+        String body = response.substring(lastIndex + 2, response.length());
+        if(body.length() > 0){
+          Serial.println("Body: " + body);
+          return body.toInt();
+        }else{
+          Serial.println("Body is empty");
+        }
       }else{
-        Serial.println("Body is empty");
+        Serial.println("Connection lost");
       }
     }else{
-      Serial.println("Connection lost");
+      Serial.println("Could not connect to the host: " + String(HOST));
     }
-  }else{
-    Serial.println("Could not connect to the host: " + String(HOST));
+    client.stop();
   }
-  client.stop();
   return -1;  
 }
