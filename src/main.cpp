@@ -17,8 +17,8 @@ const int RESET_MODE = 3;
 int mode = DISCONNECTED_MODE;
 
 //AP mode and ip settings (DISCONNECTED_MODE)
-IPAddress LOCAL_IP(192,168,1,254);
-IPAddress GATEWAY(192,168,1,1);
+IPAddress LOCAL_IP(192,168,4,1);
+IPAddress GATEWAY(192,168,4,1);
 IPAddress SUBNET(255,255,255,0);
 ESP8266WebServer server(80); //Webserver instance for DISCONNECTED_MODE
 
@@ -89,7 +89,6 @@ void setup() {
     mode = CONNECTED_MODE;
   }
 
-  LED_STATUS = -2;
   //Run setup method for the selected mode
   switch(mode){
     case CONNECTED_MODE:
@@ -99,8 +98,6 @@ void setup() {
       SetupDisconnectedMode();
     break;
   }
-
-  Serial.println("Setup done!");
 }
 
 //Main loop
@@ -173,24 +170,26 @@ void SetupConnectedMode(){
   }else{
     WiFi.begin(ssid);
   }
+  LED_STATUS = -4;
   while (WiFi.status() != WL_CONNECTED) 
   {
     RefreshStatusLED();
     delay(100);
     Serial.print(".");
+    ListenToResetButton();
   }
-  LED_STATUS = -1;
-  RefreshStatusLED();
   Serial.println("");
   Serial.println("Connection Successful!");
   Serial.print("My IP Address is: ");
-  Serial.println(WiFi.localIP());// Print the IP address
+  Serial.println(WiFi.localIP());
   LED_STATUS = GetStatus();
 }
 
 void UnSetConnectedMode(){
   Serial.println("Disconnect from network");
-  WiFi.disconnect();
+  while(WiFi.isConnected()){
+    WiFi.disconnect();
+  }
 }
 
 void LoopConnectedMode(){
@@ -207,6 +206,7 @@ void ListenToResetButton(){
     Serial.println("Reset to disconnected mode");
     mode = RESET_MODE;
     ClearWifiCredentials();
+    UnSetConnectedMode();
     SetupDisconnectedMode();
     mode = DISCONNECTED_MODE;
   }
@@ -303,7 +303,8 @@ void handleRegister(){
   
       //Try to write wifi credentials to EEPROM storage
       if(WriteWifiCredentials(ssid, password)){
-        server.send(200, "text/html", "<!DOCTYPE html><html><body><h1>Thanks</h1><a href='/'>Terug</a></body></html>");
+        server.send(200, "text/html", "<!DOCTYPE html><html><body><h1>Success</h1><p>De indicator zal zijn wifi netwerk sluiten en gaan proberen te verbinden met het door u geselecteerde netwerk.</p></body></html>");
+        delay(5000);
         UnSetDisconnectedMode();
         SetupConnectedMode();
       }
@@ -321,15 +322,38 @@ void handleNotFound(){
 void RefreshStatusLED() {
   switch (LED_STATUS)
   {
-    case -1: //No device
+    case -4: //Connecting
+      digitalWrite(GREEN_PIN, LOW);
+      digitalWrite(YELLOW_PIN, LOW);
+      digitalWrite(RED_PIN, LOW);
+      delay(100);
+      digitalWrite(RED_PIN, HIGH);
+      delay(100);
+      digitalWrite(RED_PIN, LOW);
+      digitalWrite(YELLOW_PIN, HIGH);
+      delay(100);
+      digitalWrite(YELLOW_PIN, LOW);
+      digitalWrite(GREEN_PIN, HIGH);
+    break;
+    case -3: //Internal error
       if(digitalRead(GREEN_PIN) == HIGH) digitalWrite(GREEN_PIN, LOW);
       if(digitalRead(YELLOW_PIN) == HIGH) digitalWrite(YELLOW_PIN, LOW);
-      if(digitalRead(RED_PIN) == HIGH) digitalWrite(RED_PIN, LOW);    
+      digitalWrite(RED_PIN, !digitalRead(RED_PIN));    
     break;
-    case 0: //No status
+    case -2: //Disconnected mode
+      digitalWrite(YELLOW_PIN, !digitalRead(GREEN_PIN));
+      digitalWrite(RED_PIN, !digitalRead(GREEN_PIN));
+      digitalWrite(GREEN_PIN, !digitalRead(GREEN_PIN));
+      break; 
+    case -1: //No device
       if(digitalRead(GREEN_PIN) == LOW) digitalWrite(GREEN_PIN, HIGH);
       if(digitalRead(YELLOW_PIN) == LOW) digitalWrite(YELLOW_PIN, HIGH);
-      if(digitalRead(RED_PIN) == LOW) digitalWrite(RED_PIN, HIGH);    
+      if(digitalRead(RED_PIN) == LOW) digitalWrite(RED_PIN, HIGH);     
+    break;
+    case 0: //No status
+      if(digitalRead(GREEN_PIN) == HIGH) digitalWrite(GREEN_PIN, LOW);
+      if(digitalRead(YELLOW_PIN) == HIGH) digitalWrite(YELLOW_PIN, LOW);
+      if(digitalRead(RED_PIN) == HIGH) digitalWrite(RED_PIN, LOW);
     break;
     case 1: //Good
       if(digitalRead(GREEN_PIN) == LOW) digitalWrite(GREEN_PIN, HIGH);
@@ -345,11 +369,6 @@ void RefreshStatusLED() {
       if(digitalRead(GREEN_PIN) == HIGH) digitalWrite(GREEN_PIN, LOW);
       if(digitalRead(YELLOW_PIN) == HIGH) digitalWrite(YELLOW_PIN, LOW);
       if(digitalRead(RED_PIN) == LOW) digitalWrite(RED_PIN, HIGH);    
-    break;
-    default: //Connecting to internet
-      digitalWrite(GREEN_PIN, !digitalRead(GREEN_PIN));
-      digitalWrite(YELLOW_PIN, !digitalRead(YELLOW_PIN));
-      digitalWrite(RED_PIN, !digitalRead(RED_PIN));    
     break;
   }
 }
@@ -368,6 +387,7 @@ int GetStatus(){
         while(!client.available() && timeoutCounter < 50){
           delay(100);
           timeoutCounter++;
+          RefreshStatusLED();
         }
         String response = "";
         while(client.available()){
@@ -390,5 +410,5 @@ int GetStatus(){
     }
     client.stop();
   }
-  return -1;  
+  return -3;  
 }
