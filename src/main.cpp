@@ -389,6 +389,8 @@ int GetStatus(){
           timeoutCounter++;
           RefreshStatusLED();
         }
+        if(LED_STATUS < 0) LED_STATUS = 0;
+        RefreshStatusLED();
         String response = "";
         while(client.available()){
           Serial.println("Reading string data");
