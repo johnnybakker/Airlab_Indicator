@@ -32,11 +32,11 @@ double RequestTimer = 0.00;
 int LED_STATUS = -2;
 
 //GPIO Pins
-const int GREEN_PIN = D1;
-const int YELLOW_PIN = D2;
-const int RED_PIN = D3;
-const int RESET_BUTTON_PIN = D7;
-const int SPEAKER_PIN = D8;
+const uint8_t GREEN_PIN = D1;
+const uint8_t YELLOW_PIN = D2;
+const uint8_t RED_PIN = D3;
+const uint8_t RESET_BUTTON_PIN = D7;
+const uint8_t SPEAKER_PIN = D8;
 const bool USE_BEEP = true;
 
 //Max bytes to write to EEPROM storage
@@ -88,6 +88,8 @@ void setup()
     pinMode(RED_PIN, OUTPUT);
     pinMode(SPEAKER_PIN, OUTPUT);
 
+    attachInterrupt(RESET_BUTTON_PIN, ListenToResetButton, RISING);
+
     if(USE_BEEP) Beep();
 
     //Read registered ssid and password from EEPROM storage
@@ -120,10 +122,16 @@ void loop(void)
     {
     case CONNECTED_MODE:
         LoopConnectedMode();
-        ListenToResetButton();
+        //ListenToResetButton();
         break;
     case DISCONNECTED_MODE:
         LoopDisconnectedMode();
+        break;
+    case RESET_MODE:
+        ClearWifiCredentials();
+        UnSetConnectedMode();
+        SetupDisconnectedMode();
+        mode = DISCONNECTED_MODE;
         break;
     }
     delay(LOOP_DELAY);
@@ -196,7 +204,7 @@ void SetupConnectedMode()
         RefreshStatusLED();
         delay(100);
         Serial.print(".");
-        ListenToResetButton();
+        //ListenToResetButton();
     }
     Serial.println("");
     Serial.println("Connection Successful!");
@@ -227,17 +235,10 @@ void LoopConnectedMode()
     }
 }
 
+ICACHE_RAM_ATTR
 void ListenToResetButton()
 {
-    if (digitalRead(RESET_BUTTON_PIN) == HIGH)
-    {
-        Serial.println("Reset to disconnected mode");
-        mode = RESET_MODE;
-        ClearWifiCredentials();
-        UnSetConnectedMode();
-        SetupDisconnectedMode();
-        mode = DISCONNECTED_MODE;
-    }
+    mode = RESET_MODE;
 }
 
 bool ClearWifiCredentials()
