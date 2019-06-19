@@ -32,12 +32,12 @@ double RequestTimer = 0.00;
 int LED_STATUS = -2;
 
 //GPIO Pins
-const uint8_t GREEN_PIN = D1;
-const uint8_t YELLOW_PIN = D2;
-const uint8_t RED_PIN = D3;
-const uint8_t RESET_BUTTON_PIN = D7;
-const uint8_t SPEAKER_PIN = D8;
-const bool USE_BEEP = true;
+const uint8_t GREEN_PIN = D0; //D1
+const uint8_t YELLOW_PIN = D1; //D2
+const uint8_t RED_PIN = D2; //D3
+const uint8_t RESET_BUTTON_PIN = D5; //D7
+const uint8_t SPEAKER_PIN = NULL; //D8
+const bool USE_BEEP = false; //True
 
 //Max bytes to write to EEPROM storage
 const int MAX_EEPROM_BYTES = 128;
@@ -86,7 +86,7 @@ void setup()
     pinMode(GREEN_PIN, OUTPUT);
     pinMode(YELLOW_PIN, OUTPUT);
     pinMode(RED_PIN, OUTPUT);
-    pinMode(SPEAKER_PIN, OUTPUT);
+    if (USE_BEEP) pinMode(SPEAKER_PIN, OUTPUT);
 
     attachInterrupt(RESET_BUTTON_PIN, ListenToResetButton, RISING);
 
